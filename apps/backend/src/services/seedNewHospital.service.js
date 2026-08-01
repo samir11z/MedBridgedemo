@@ -17,6 +17,19 @@ const FACILITY_TYPE_MAP = {
   Specialty: "Central_Hospital",
 };
 
+// Rough dosage-form -> packaging-unit mapping. Your actual medicine form
+// uses free-text units like "boxes"/"vials"/"bottles" — this is a
+// reasonable default, adjust the mapping if your data differs.
+const UNIT_MAP = {
+  Tablet: "boxes",
+  Capsule: "boxes",
+  Syrup: "bottles",
+  Injection: "vials",
+  IV_Fluid: "bottles",
+  Ointment: "tubes",
+  Drops: "bottles",
+};
+
 async function seedNewHospitalHistory(hospital) {
   const facilityType = FACILITY_TYPE_MAP[hospital.type] || "District_Hospital";
 
@@ -51,7 +64,9 @@ async function seedNewHospitalHistory(hospital) {
       data: {
         hospitalId: hospital.id,
         medicineCode: batch.medicine_id,
-        name: batch.medicine_id, // replace with a real name lookup if you have a medicines reference table in Postgres
+        name: batch.generic_name || batch.medicine_id,
+        category: batch.category || "Uncategorized",
+        unit: UNIT_MAP[batch.dosage_form] || "units",
         batch: batch.batch_no,
         quantity: batch.quantity_available,
         expiry: new Date(batch.expiry_date),

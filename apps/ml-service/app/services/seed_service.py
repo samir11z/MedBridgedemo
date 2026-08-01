@@ -61,6 +61,12 @@ def seed_hospital_history(hospital_row: dict, weeks_of_history: int = 26) -> dic
         hospitals_df, medicines_df, weeks=weeks
     )
 
+    # The Medicine table requires `category` and a packaging `unit` — the raw
+    # ledger snapshot only has batch/quantity/expiry, so enrich it here with
+    # the reference attributes from medicines_df before handing it back.
+    med_lookup = medicines_df.set_index("medicine_id")[["category", "dosage_form", "generic_name"]]
+    inventory_df = inventory_df.merge(med_lookup, left_on="medicine_id", right_index=True, how="left")
+
     return {
         "hospital_id": row["hospital_id"],
         "weeks_generated": len(weeks),
