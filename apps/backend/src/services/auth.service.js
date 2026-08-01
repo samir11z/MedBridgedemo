@@ -2,7 +2,6 @@ const bcrypt = require("bcryptjs");
 const prisma = require("../config/db");
 const { signToken } = require("../utils/jwt");
 const { ApiError } = require("../utils/ApiError");
-const { seedNewHospitalHistory } = require("./seedNewHospital.service");
 
 const SALT_ROUNDS = 10;
 
@@ -31,12 +30,6 @@ async function registerHospitalAndAdmin({ hospitalName, location, type, name, em
   const hospital = await prisma.hospital.create({
     data: { name: hospitalName, location, type: type || "General" },
   });
-
-  // Fire-and-forget: signup should feel instant, seeding finishes in the
-  // background a few seconds later without blocking the response.
-  seedNewHospitalHistory(hospital).catch((err) =>
-    console.error("Background seeding error:", err)
-  );
 
   const user = await prisma.user.create({
     data: { name, email, passwordHash, role: "ADMIN", hospitalId: hospital.id },
