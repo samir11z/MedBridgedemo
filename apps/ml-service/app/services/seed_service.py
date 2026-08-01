@@ -23,7 +23,10 @@ TRAINING_DIR = Path(__file__).resolve().parents[2] / "training"
 sys.path.insert(0, str(TRAINING_DIR))
 
 from generate_synthetic_data import build_medicines  # noqa: E402
-from generate_ledger_data import build_pairs, run_simulation, week_starts  # noqa: E402
+from generate_ledger_data import build_pairs, run_simulation, week_starts, build_features_from_ledger  # noqa: E402
+
+RAW_DIR = Path(__file__).resolve().parents[2] / "data" / "raw"
+PROCESSED_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 # Reasonable defaults when the signup form doesn't collect every attribute
 # our simulation formula wants. Keep this list in sync with what the signup
@@ -40,6 +43,32 @@ DEFAULTS = {
     "longitude": 85.3,
     "is_demo": 0,
 }
+
+
+def _persist_for_serving(hospitals_df: pd.DataFrame, tx_df: pd.DataFrame, medicines_df: pd.DataFrame):
+    """Appends the new hospital + its transactions into the SAME files
+    /forecast reads from, and appends its feature rows to demand_features.csv.
+    Without this, seeding only reaches Postgres — the ML service would still
+    404 on this hospital, since /forecast reads demand_features.csv directly,
+    not the database.
+    """
+    hospitals_path = RAW_DIR / "hospitals.csv"
+    if hospitals_path.exists():
+        existing = pd.read_csv(hospitals_path)
+        if hospitals_df["hospital_id"].iloc[0] not in existing["hospital_id"].values:
+            combined = pd.concat([existing, hospitals_df], ignore_index=True)
+            combined.to_csv(hospitals_path, index=False)
+
+    tx_path = RAW_DIR / "transactions.csv"
+    if tx_path.exists():
+        tx_df.to_csv(tx_path, mode="a", header=False, index=False)
+
+    feats = build_features_from_ledger(tx_df, hospitals_df, medicines_df)
+    feat_path = PROCESSED_DIR / "demand_features.csv"
+    if feat_path.exists():
+        feats.to_csv(feat_path, mode="a", header=False, index=False)
+    else:
+        feats.to_csv(feat_path, index=False)
 
 
 def seed_hospital_history(hospital_row: dict, weeks_of_history: int = 26) -> dict:
@@ -66,6 +95,10 @@ def seed_hospital_history(hospital_row: dict, weeks_of_history: int = 26) -> dic
     # the reference attributes from medicines_df before handing it back.
     med_lookup = medicines_df.set_index("medicine_id")[["category", "dosage_form", "generic_name"]]
     inventory_df = inventory_df.merge(med_lookup, left_on="medicine_id", right_index=True, how="left")
+
+    # Bridge into the ML service's own serving data — without this, /forecast
+    # would 404 for this hospital even though Postgres has its data.
+    _persist_for_serving(hospitals_df, tx_df, medicines_df)
 
     return {
         "hospital_id": row["hospital_id"],
